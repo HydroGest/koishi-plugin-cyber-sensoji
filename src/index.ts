@@ -20,197 +20,212 @@ export const Config: Schema<Config> = Schema.object({
 export const inject = { optional: ["puppeteer"] }
 
 export function apply(ctx: Context, config: Config) {
-  ctx.command("浅草寺抽签", "抽签")
+  ctx.command("浅草寺抽签", "诚心求签，感应神明")
     .action(async ({ session }) => {
+      // --- 仪式感逻辑：模拟摇签筒 ---
+      // 设定一个 40% 的成功率，模拟签杆不是每次都能轻易摇出来的感觉
+      if (Random.bool(0.6)) {
+        return "（签筒晃动声...）签头未出，请平心静气，再试一次。"
+      }
+
       const num = Random.int(1, 101)
 
       if (num >= 5) {
-        // 清理原始数据中的异常换行符
+        // 数据预处理：清理转义字符并标准化
         const rawText = Random.pick(qian).replace(/\\n/g, '\n');
-
-        if (config.imageMode) {
-          if (ctx.puppeteer) {
-            // --- 数据精准解析 ---
-            const lines = rawText.split('\n').map(l => l.trim()).filter(l => l);
-            const result = lines[0]; // 大吉 / 凶 等
-            const poem = lines.slice(1, 5); // 四句诗
-            
-            const explanations: { title: string; content: string }[] = [];
-            const items: string[] = [];
-            
-            // 解析剩余部分
-            let currentTitle = "";
-            for (let i = 5; i < lines.length; i++) {
-              const line = lines[i];
-              if (line.includes('：')) {
-                items.push(line);
-              } else {
-                // 如果这一行比较短，且是下一段的开头（匹配诗句），则作为标题
-                if (line.length <= 10 && poem.some(p => line.includes(p.substring(0,2)))) {
-                  currentTitle = line;
-                } else if (currentTitle) {
-                  explanations.push({ title: currentTitle, content: line });
-                  currentTitle = ""; // 用完清空
-                } else {
-                  explanations.push({ title: "", content: line });
-                }
-              }
+        
+        if (config.imageMode && ctx.puppeteer) {
+          const lines = rawText.split('\n').map(l => l.trim()).filter(l => l);
+          const result = lines[0]; 
+          const poem = lines.slice(1, 5); 
+          
+          const explanations: { title: string; content: string }[] = [];
+          const items: string[] = [];
+          
+          let currentTitle = "";
+          for (let i = 5; i < lines.length; i++) {
+            const line = lines[i];
+            if (line.includes('：')) {
+              items.push(line);
+            } else if (line.length <= 12) {
+              currentTitle = line;
+            } else {
+              explanations.push({ title: currentTitle, content: line });
+              currentTitle = "";
             }
+          }
 
-            return ctx.puppeteer.render(
+          return ctx.puppeteer.render(
 `<html>
   <head>
     <style>
+      @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&display=swap');
+
       html, body {
         width: fit-content;
         height: fit-content;
         margin: 0;
         padding: 0;
-        background-color: #f4f4f4;
+        background-color: transparent;
       }
 
-      .paper {
-        width: 420px;
-        background: #fdf6e3; /* 经典纸张色 */
-        border: 2px solid #8b2222;
-        margin: 20px;
-        padding: 30px 25px;
+      .omikuji-card {
+        width: 380px;
+        background: #fdfaf2;
+        padding: 40px 30px;
         box-sizing: border-box;
-        font-family: "Source Han Serif SC", "Noto Serif SC", "SimSun", "STSong", serif;
+        border: 1px solid #d4c5a9;
+        font-family: "Noto Serif SC", "Source Han Serif SC", "MingLiU", "微軟正黑體", serif;
         position: relative;
-        color: #333;
+        color: #2c2c2c;
       }
 
-      /* 顶部装饰 */
-      .header-box {
-        border: 1.5px solid #8b2222;
-        color: #8b2222;
-        width: fit-content;
-        margin: 0 auto;
-        padding: 2px 15px;
-        font-size: 16px;
-        font-weight: bold;
-        letter-spacing: 4px;
+      /* 装饰性内边框 */
+      .omikuji-card::after {
+        content: "";
+        position: absolute;
+        top: 10px; left: 10px; right: 10px; bottom: 10px;
+        border: 1px solid #e2d7bf;
+        pointer-events: none;
       }
 
-      /* 结果字体 */
-      .result {
+      .header-title {
         text-align: center;
-        font-size: 64px;
-        color: #b71c1c;
-        margin: 20px 0;
-        font-family: "KaiTi", "STKaiti", serif;
-      }
-
-      /* 竖排诗句区域 */
-      .poem-wrap {
-        border: 1px solid #c0a46b;
-        background: rgba(255,255,255,0.4);
-        display: flex;
-        flex-direction: row-reverse; /* 关键：从右往左排 */
-        justify-content: center;
-        padding: 30px 10px;
-        margin: 20px 0;
-      }
-
-      .poem-col {
-        writing-mode: vertical-rl;
-        font-size: 24px;
-        font-weight: bold;
-        letter-spacing: 0.2em;
-        margin: 0 12px;
-        line-height: 1.2;
-        height: 180px; /* 固定高度确保整齐 */
-        text-align: start;
-      }
-
-      .section-label {
+        font-size: 14px;
+        letter-spacing: 0.5em;
         color: #8b2222;
-        font-weight: bold;
-        font-size: 18px;
-        display: flex;
-        align-items: center;
-        margin-top: 25px;
+        margin-bottom: 30px;
+        border-bottom: 1px solid #8b2222;
+        display: block;
+        width: fit-content;
+        margin-left: auto;
+        margin-right: auto;
+        padding-bottom: 5px;
+        font-weight: 700;
       }
-      .section-label::before { content: "✦ "; margin-right: 5px; }
 
-      /* 释义文字 */
-      .desc-group { margin-bottom: 15px; }
-      .desc-title {
-        font-weight: bold;
-        color: #555;
-        margin-top: 10px;
+      .luck-result {
+        text-align: center;
+        font-size: 52px;
+        color: #b71c1c;
+        margin: 0 0 40px 0;
+        font-family: "Noto Serif SC", serif;
+        font-weight: 900;
+      }
+
+      /* 诗句容器：严谨的对称与排版 */
+      .poem-box {
+        display: flex;
+        flex-direction: row-reverse;
+        justify-content: center;
+        align-items: center;
+        gap: 25px;
+        margin: 0 auto 40px auto;
+        padding: 35px 20px;
+        border-top: 2px solid #333;
+        border-bottom: 2px solid #333;
+        background-color: #fff;
+        min-height: 200px;
+      }
+
+      .poem-line {
+        writing-mode: vertical-rl;
+        font-size: 26px;
+        font-weight: 600;
+        letter-spacing: 0.3em;
+        line-height: 1;
+        text-align: center;
+        color: #1a1a1a;
+      }
+
+      .section-head {
+        font-size: 16px;
+        font-weight: 700;
+        color: #8b2222;
+        border-left: 3px solid #8b2222;
+        padding-left: 10px;
+        margin: 25px 0 12px 0;
+      }
+
+      .desc-text {
+        font-size: 14px;
+        line-height: 1.8;
+        color: #4a4a4a;
+        margin-bottom: 10px;
+        text-align: justify;
+      }
+
+      .desc-sub-title {
+        font-weight: 700;
+        color: #333;
+        margin-top: 15px;
         font-size: 15px;
       }
-      .desc-content {
-        font-size: 14px;
-        line-height: 1.6;
-        color: #444;
-        text-align: justify;
-        margin-top: 4px;
-      }
 
-      /* 仙机列表 */
-      .item-list {
-        border-top: 1px dashed #ccc;
+      .item-grid {
         margin-top: 15px;
-        padding-top: 10px;
+        padding-top: 15px;
+        border-top: 1px dashed #d4c5a9;
       }
-      .item {
-        font-size: 14px;
-        margin-bottom: 5px;
-        line-height: 1.5;
-      }
-      .item-k { font-weight: bold; color: #614126; }
 
-      .footer {
+      .item-row {
+        font-size: 13px;
+        margin-bottom: 6px;
+        display: flex;
+        color: #555;
+      }
+
+      .item-k {
+        font-weight: 700;
+        color: #333;
+        white-space: nowrap;
+        margin-right: 8px;
+      }
+
+      .footer-msg {
         text-align: center;
-        font-size: 12px;
-        color: #999;
-        margin-top: 30px;
-        letter-spacing: 1px;
+        font-size: 11px;
+        color: #a09070;
+        margin-top: 40px;
+        font-style: italic;
       }
     </style>
   </head>
   <body>
-    <div class="paper">
-      <div class="header-box">浅草寺观音签</div>
-      <div class="result">${result}</div>
+    <div class="omikuji-card">
+      <span class="header-title">浅草寺观音灵签</span>
+      
+      <div class="luck-result">${result}</div>
 
-      <div class="poem-wrap">
-        ${poem.map(p => `<div class="poem-col">${p}</div>`).join('')}
+      <div class="poem-box">
+        ${poem.map(p => `<div class="poem-line">${p}</div>`).join('')}
       </div>
 
-      <div class="section-label">释义</div>
+      <div class="section-head">释义</div>
       ${explanations.map(e => `
-        <div class="desc-group">
-          ${e.title ? `<div class="desc-title">${e.title}</div>` : ''}
-          <div class="desc-content">${e.content}</div>
+        <div style="margin-bottom: 15px;">
+          ${e.title ? `<div class="desc-sub-title">${e.title}</div>` : ''}
+          <div class="desc-text">${e.content}</div>
         </div>
       `).join('')}
 
-      <div class="section-label">仙机</div>
-      <div class="item-list">
+      <div class="section-head">仙机</div>
+      <div class="item-grid">
         ${items.map(i => {
           const [k, v] = i.split('：');
-          return `<div class="item"><span class="item-k">${k}：</span>${v}</div>`;
+          return `<div class="item-row"><span class="item-k">${k}</span><span>${v}</span></div>`;
         }).join('')}
       </div>
 
-      <div class="footer">此签诚心求之，万事皆有定数。</div>
+      <div class="footer-msg">— 诚心所愿，万事皆随缘 —</div>
     </div>
   </body>
 </html>`
-            );
-          } else {
-            ctx.logger('cyber-sensoji').warn("未启用puppeteer服务，无法使用图片模式")
-            return rawText
-          }
-        } else {
-          return rawText
+          );
         }
+        return rawText;
       } else {
-        return "是空签呢"
+        return "此乃空签，意为“放下”，诸事不宜强求，留在寺中可化解。"
       }
     })
 }
