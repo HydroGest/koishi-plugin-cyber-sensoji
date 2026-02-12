@@ -25,213 +25,215 @@ export function apply(ctx: Context, config: Config) {
       const num = Random.int(1, 101)
 
       if (num >= 5) {
-        const rawText = Random.pick(qian);
+        // 获取原始文本并清洗掉数据中可能存在的转义字符
+        let rawText = Random.pick(qian).replace(/\\n/g, '\n');
 
         if (config.imageMode) {
           if (ctx.puppeteer) {
-            // --- 数据解析 ---
+            // --- 精细化解析逻辑 ---
             const lines = rawText.split('\n').map(l => l.trim()).filter(l => l);
             const result = lines[0]; // 吉凶
-            const poem = lines.slice(1, 5); // 诗句
-            const explanations: string[] = [];
+            const poem = lines.slice(1, 5); // 四句核心诗句
+            
+            const rest = lines.slice(5);
+            const explanations: { text: string, isHeader: boolean }[] = [];
             const items: string[] = [];
             
-            for (let i = 5; i < lines.length; i++) {
-              const line = lines[i];
+            for (const line of rest) {
               if (line.includes('：')) {
                 items.push(line);
               } else {
-                explanations.push(line);
+                // 如果这行文字在诗句中出现过，将其视为子标题（原诗句重申）
+                const isHeader = poem.some(p => line.includes(p) || p.includes(line));
+                explanations.push({ text: line, isHeader });
               }
             }
-            // --- 解析结束 ---
 
-            // --- HTML 渲染 (全新设计风格) ---
+            // --- HTML & CSS 设计 ---
             return ctx.puppeteer.render(
 `<html>
   <head>
     <style>
-      /* 引入网络字体作为后备，优先使用系统自带的传统字体 */
-      @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&display=swap');
-      
       html, body {
-        width: fit-content;
-        height: fit-content;
         margin: 0;
         padding: 0;
-        /* 确保截图背景透明 */
-        background-color: transparent; 
+        width: fit-content;
+        height: fit-content;
+        background: transparent;
       }
 
-      /* 主容器：模拟陈旧纸张 */
-      .omikuji-paper {
-        width: 400px; /* 设定一个合适的宽度 */
-        /* 模拟泛黄宣纸的渐变和纹理背景 */
-        background: 
-          radial-gradient(ellipse at center, #fcf5e4 0%, #f3e2c0 100%),
-          url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4' viewBox='0 0 4 4'%3E%3Cpath fill='%23999' fill-opacity='0.05' d='M1 3h1v1H1V3zm2-2h1v1H3V1z'%3E%3C/path%3E%3C/svg%3E");
-        
-        /* 传统风格的双重边框 */
-        border: 3px double #8b2222; /* 深朱红色 */
-        padding: 25px;
-        box-sizing: border-box;
-        box-shadow: 10px 10px 20px rgba(0,0,0,0.15);
-        
-        /* 全局字体设定，优先楷体和宋体 */
-        font-family: "KaiTi", "楷体", "STKaiti", "SimSun", "宋体", "Noto Serif SC", serif;
-        color: #2c2c2c; /* 墨色 */
+      .paper {
+        width: 380px;
+        padding: 30px;
+        background: #fdfaf2;
+        /* 模拟宣纸纹理 */
+        background-image: 
+          linear-gradient(rgba(139, 34, 34, 0.05) 1px, transparent 1px),
+          radial-gradient(#f7f0d5 0%, #fdfaf2 100%);
+        background-size: 100% 2em, auto;
+        border: 1px solid #d4c5a1;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        font-family: "STKaiti", "KaiTi", "楷体", "SimSun", "宋体", serif;
+        color: #2b2b2b;
       }
 
-      .header-stamp {
-        text-align: center;
-        font-size: 16px;
-        color: #8b2222;
-        font-weight: bold;
-        letter-spacing: 4px;
-        margin-bottom: 15px;
-        /* 模拟印章效果的边框 */
+      .outer-border {
         border: 2px solid #8b2222;
-        display: inline-block;
-        padding: 4px 12px;
-        border-radius: 4px;
+        padding: 5px;
+      }
+
+      .inner-content {
+        border: 1px solid #8b2222;
+        padding: 20px 15px;
         position: relative;
-        left: 50%;
-        transform: translateX(-50%);
       }
 
-      /* 吉凶结果：极大，朱红，楷体 */
-      .result-big {
+      /* 顶部印章 */
+      .top-seal {
         text-align: center;
-        font-size: 56px;
+        color: #8b2222;
+        font-size: 14px;
+        font-weight: bold;
+        border: 2px solid #8b2222;
+        width: fit-content;
+        margin: 0 auto 15px;
+        padding: 2px 10px;
+      }
+
+      /* 吉凶结果 */
+      .result-title {
+        font-size: 60px;
+        text-align: center;
+        color: #b71c1c;
+        margin: 10px 0 30px;
         font-weight: 900;
-        color: #b71c1c; /* 更鲜艳的朱红 */
-        margin: 5px 0 25px 0;
-        text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+        line-height: 1;
       }
 
-      /* 诗句区域：核心改动 -> 竖排直书 */
-      .poem-container {
+      /* 诗句竖排区：从右往左 */
+      .poem-section {
         display: flex;
+        flex-direction: row-reverse; /* 关键：使诗句从右向左排列 */
         justify-content: center;
-        margin: 30px 0;
-        padding: 20px 0;
-        /* 上下古典风格分隔线 */
-        border-top: 1px solid #8b2222;
-        border-bottom: 1px solid #8b2222;
-        background-color: rgba(255,255,255,0.3); /* 微微提亮 */
-      }
-
-      .poem-vertical {
-        /* 关键属性：竖排从右向左 */
         writing-mode: vertical-rl;
         text-orientation: upright;
-        font-size: 26px;
-        font-weight: bold;
-        letter-spacing: 6px;
-        line-height: 2.2; /* 行间距 */
-        height: 200px; /* 固定高度确保对齐 */
-        color: #1a1a1a;
+        height: 180px;
+        margin: 0 auto 30px;
+        padding: 20px;
+        background: white;
+        border: 1px solid #eee;
+        box-shadow: inset 0 0 10px rgba(0,0,0,0.02);
       }
 
-      /* 解说章节标题 */
-      .section-title {
-        font-size: 18px;
+      .poem-line {
+        font-size: 24px;
         font-weight: bold;
+        letter-spacing: 0.2em;
+        margin: 0 10px;
+        line-height: 1.5;
+      }
+
+      /* 标题装饰 */
+      .section-label {
         color: #8b2222;
-        margin-top: 25px;
-        margin-bottom: 10px;
+        font-weight: bold;
+        font-size: 16px;
+        margin: 20px 0 10px;
         display: flex;
         align-items: center;
       }
-      /* 标题前的小装饰 */
-      .section-title::before {
-        content: '✦';
-        margin-right: 8px;
-        font-size: 14px;
+      .section-label::before {
+        content: "✦";
+        margin-right: 5px;
       }
 
-      .explanation-text {
+      /* 释义内容 */
+      .exp-container {
+        font-family: "SimSun", "宋体", serif;
+        font-size: 14px;
+        line-height: 1.8;
+        text-align: justify;
+      }
+
+      .exp-header {
+        color: #8b2222;
+        font-weight: bold;
+        display: block;
+        margin-top: 10px;
         font-size: 15px;
-        line-height: 1.7;
-        text-align: justify; /* 两端对齐 */
-        margin-bottom: 12px;
-        font-family: "SimSun", "宋体", serif; /* 正文用宋体更易读 */
       }
 
-      /* 具体项目列表 */
-      .item-grid {
-        display: grid;
-        grid-template-columns: 1fr; /* 单列，看起来更像清单 */
-        gap: 8px;
+      .exp-text {
+        display: block;
+        margin-bottom: 8px;
+        color: #444;
+      }
+
+      /* 仙机部分 */
+      .item-list {
+        border-top: 1px dashed #d4c5a1;
         margin-top: 15px;
-        padding-top: 15px;
-        border-top: 1px dashed #a67c52; /* 棕色虚线 */
-      }
-
-      .item-row {
-        font-size: 14px;
-        line-height: 1.5;
+        padding-top: 10px;
+        font-size: 13px;
         font-family: "SimSun", "宋体", serif;
       }
+      .item-row { margin-bottom: 5px; }
+      .item-key { font-weight: bold; color: #5d4037; }
 
-      .item-label {
-        font-weight: bold;
-        color: #5d4037; /* 深棕色 */
-        margin-right: 4px;
-      }
-
-      .footer {
+      .footer-note {
         text-align: center;
-        margin-top: 30px;
-        font-size: 12px;
-        color: #795548;
-        opacity: 0.8;
+        font-size: 11px;
+        color: #999;
+        margin-top: 25px;
+        letter-spacing: 1px;
       }
     </style>
   </head>
-
   <body>
-    <div class="omikuji-paper">
-      <div class="header-stamp">浅草寺观音签</div>
-      
-      <div class="result-big">${result}</div>
+    <div class="paper">
+      <div class="outer-border">
+        <div class="inner-content">
+          <div class="top-seal">浅草寺观音签</div>
+          
+          <div class="result-title">${result}</div>
 
-      <div class="poem-container">
-        <div class="poem-vertical">
-          ${poem.reverse().join('\n')} </div>
-      </div>
+          <div class="poem-section">
+            ${poem.map(line => `<div class="poem-line">${line}</div>`).join('')}
+          </div>
 
-      ${explanations.length > 0 ? `
-        <div class="section-title">释义</div>
-        ${explanations.map(line => `<div class="explanation-text">${line}</div>`).join('')}
-      ` : ''}
+          <div class="section-label">释义</div>
+          <div class="exp-container">
+            ${explanations.map(exp => 
+              exp.isHeader 
+              ? `<span class="exp-header">${exp.text}</span>` 
+              : `<span class="exp-text">${exp.text}</span>`
+            ).join('')}
+          </div>
 
-      ${items.length > 0 ? `
-        <div class="section-title">仙机</div>
-        <div class="item-grid">
-          ${items.map(line => {
-            const parts = line.split('：');
-            return `<div class="item-row"><span class="item-label">${parts[0]}：</span>${parts.slice(1).join('：')}</div>`;
-          }).join('')}
+          <div class="section-label">仙机</div>
+          <div class="item-list">
+            ${items.map(line => {
+              const [key, ...val] = line.split('：');
+              return `<div class="item-row"><span class="item-key">${key}：</span>${val.join('：')}</div>`;
+            }).join('')}
+          </div>
+
+          <div class="footer-note">此签诚心求之，万事皆有定数。</div>
         </div>
-      ` : ''}
-
-      <div class="footer">
-        此签诚心求之，万事皆有定数。
       </div>
     </div>
   </body>
 </html>`
             );
           } else {
-            ctx.logger('cyber-sensoji').warn("未启用puppeteer服务，无法使用图片模式")
-            return rawText
+            ctx.logger('cyber-sensoji').warn("未启用puppeteer服务，无法使用图片模式");
+            return rawText;
           }
         } else {
-          return rawText
+          return rawText;
         }
       } else {
-        return "是空签呢（据说这是把凶签留在了寺里，是好事哦）"
+        return "是空签呢（据说这是把凶签留在了寺里，是好事哦）";
       }
     })
 }
